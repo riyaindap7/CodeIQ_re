@@ -1,0 +1,218 @@
+{
+  "repository_analysis": {
+    "total_files": 18,
+    "total_functions": 67,
+    "total_classes": 16,
+    "hpg_nodes": 101,
+    "hpg_edges": 83,
+    "cfgs_built": 67,
+    "pdgs_built": 67
+  },
+  "file_breakdown": [
+    {
+      "file_path": "C:\\Users\\riyai\\AppData\\Local\\Temp\\tmp08c1lgu4\\repo\\src\\calendar_admin.py",
+      "functions": [
+        "__init__",
+        "calendarDateChanged",
+        "handleVenueEditingFinished",
+        "handleCreateEventClicked",
+        "show_success_dialog"
+      ],
+      "classes": [
+        "CalendarWindow"
+      ]
+    },
+    {
+      "file_path": "C:\\Users\\riyai\\AppData\\Local\\Temp\\tmp08c1lgu4\\repo\\src\\gallery_admin.py",
+      "functions": [
+        "__init__",
+        "loaddata",
+        "saving_event"
+      ],
+      "classes": [
+        "GadminWindow"
+      ]
+    },
+    {
+      "file_path": "C:\\Users\\riyai\\AppData\\Local\\Temp\\tmp08c1lgu4\\repo\\src\\gallery_user.py",
+      "functions": [
+        "__init__",
+        "populate_data",
+        "handle_combobox_change"
+      ],
+      "classes": [
+        "GalleryWindow"
+      ]
+    },
+    {
+      "file_path": "C:\\Users\\riyai\\AppData\\Local\\Temp\\tmp08c1lgu4\\repo\\src\\homepage_admin.py",
+      "functions": [
+        "__init__",
+        "load_tabel"
+      ],
+      "classes": [
+        "AdHomepageWindow"
+      ]
+    },
+    {
+      "file_path": "C:\\Users\\riyai\\AppData\\Local\\Temp\\tmp08c1lgu4\\repo\\src\\homepage_try.py",
+      "functions": [
+        "__init__",
+        "select_image",
+        "save_image"
+      ],
+      "classes": [
+        "ImageInsertionWindow"
+      ]
+    },
+    {
+      "file_path": "C:\\Users\\riyai\\AppData\\Local\\Temp\\tmp08c1lgu4\\repo\\src\\hompage_user.py",
+      "functions": [
+        "__init__",
+        "upcoming_events",
+        "participationfunction"
+      ],
+      "classes": [
+        "HomepageWindow"
+      ]
+    },
+    {
+      "file_path": "C:\\Users\\riyai\\AppData\\Local\\Temp\\tmp08c1lgu4\\repo\\src\\load_QRfinal.py",
+      "functions": [
+        "__init__",
+        "handle_success",
+        "generate_qr_code",
+        "download_qr_code",
+        "cleanup"
+      ],
+      "classes": [
+        "LoadQR"
+      ]
+    },
+    {
+      "file_path": "C:\\Users\\riyai\\AppData\\Local\\Temp\\tmp08c1lgu4\\repo\\src\\load_QRfinal_vol.py",
+      "functions": [
+        "__init__",
+        "handle_success",
+        "generate_qr_code",
+        "download_qr_code",
+        "cleanup"
+      ],
+      "classes": [
+        "LoadQR_vol"
+      ]
+    },
+    {
+      "file_path": "C:\\Users\\riyai\\AppData\\Local\\Temp\\tmp08c1lgu4\\repo\\src\\login.py",
+      "functions": [
+        "__init__",
+        "authenticate_user",
+        "authenticate_admin"
+      ],
+      "classes": [
+        "LoginWindow"
+      ]
+    },
+    {
+      "file_path": "C:\\Users\\riyai\\AppData\\Local\\Temp\\tmp08c1lgu4\\repo\\src\\certificate_registration.py",
+      "functions": [
+        "__init__"
+      ],
+      "classes": [
+        "CertificateWindow"
+      ]
+    },
+    {
+      "file_path": "C:\\Users\\riyai\\AppData\\Local\\Temp\\tmp08c1lgu4\\repo\\src\\connection_own.py",
+      "functions": [
+        "__init__",
+        "goto_message",
+        "goto_login",
+        "goto_signup",
+        "goto_galleryadmin",
+        "choice",
+        "logout",
+        "open_qr_volun",
+        "open_qr",
+        "login_function",
+        "goto_calendar",
+        "goto_adminhomepage",
+        "login_function_admin",
+        "goto_registeration",
+        "goto_participation",
+        "back_registeration",
+        "galleryfunction",
+        "goto_volunteering",
+        "back_homepage",
+        "goto_scanner"
+      ],
+      "classes": [
+        "ConnectionManager"
+      ]
+    },
+    {
+      "file_path": "C:\\Users\\riyai\\AppData\\Local\\Temp\\tmp08c1lgu4\\repo\\src\\signup.py",
+      "functions": [
+        "__init__",
+        "validate_email",
+        "signupfunction"
+      ],
+      "classes": [
+        "SignupWindow"
+      ]
+    },
+    {
+      "file_path": "C:\\Users\\riyai\\AppData\\Local\\Temp\\tmp08c1lgu4\\repo\\src\\volunteering_register.py",
+      "functions": [
+        "__init__",
+        "validate_email",
+        "volun_confirm",
+        "send_notification_email"
+      ],
+      "classes": [
+        "VolunteeringWindow"
+      ]
+    },
+    {
+      "file_path": "C:\\Users\\riyai\\AppData\\Local\\Temp\\tmp08c1lgu4\\repo\\src\\__init__.py",
+      "functions": [],
+      "classes": []
+    },
+    {
+      "file_path": "C:\\Users\\riyai\\AppData\\Local\\Temp\\tmp08c1lgu4\\repo\\zbarw-20121031\\examples\\scan_image.cpp",
+      "functions": [],
+      "classes": []
+    },
+    {
+      "file_path": "C:\\Users\\riyai\\AppData\\Local\\Temp\\tmp08c1lgu4\\repo\\src\\qr1.py",
+      "functions": [
+        "__init__",
+        "scan_qr_code"
+      ],
+      "classes": [
+        "ScannerWindow"
+      ]
+    },
+    {
+      "file_path": "C:\\Users\\riyai\\AppData\\Local\\Temp\\tmp08c1lgu4\\repo\\src\\Participation_register.py",
+      "functions": [
+        "__init__",
+        "validate_email",
+        "parti_confirm",
+        "send_notification_email"
+      ],
+      "classes": [
+        "ParticipationWindow"
+      ]
+    },
+    {
+      "file_path": "C:\\Users\\riyai\\AppData\\Local\\Temp\\tmp08c1lgu4\\repo\\src\\registeration.py",
+      "functions": [
+        "__init__"
+      ],
+      "classes": [
+        "RegisterationWindow"
+      ]
+    }
+  ]
+}
