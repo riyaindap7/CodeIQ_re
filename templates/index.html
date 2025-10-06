@@ -1,4 +1,3 @@
-<!-- templates/index.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -85,10 +84,17 @@
         .btn:hover {
             background: #005a9e;
         }
+        .btn:disabled {
+            background: #cccccc;
+            cursor: not-allowed;
+        }
         .loading {
             display: none;
             text-align: center;
             padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            margin: 20px 0;
         }
         .analysis-form {
             background: #f8f9fa;
@@ -118,8 +124,33 @@
             border-radius: 4px;
             cursor: pointer;
         }
-        .form-group button:hover {
+        .form-group button:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+        .form-group button:hover:not(:disabled) {
             background: #218838;
+        }
+        .error-message {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+            display: none;
+        }
+        .success-message {
+            background: #d1edff;
+            color: #0c5460;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+            display: none;
+        }
+        .no-data {
+            text-align: center;
+            padding: 40px;
+            color: #6c757d;
         }
     </style>
 </head>
@@ -132,18 +163,27 @@
 
         <div class="analysis-form">
             <h2>Analyze Repository</h2>
+            <div id="errorMessage" class="error-message"></div>
+            <div id="successMessage" class="success-message"></div>
             <div class="form-group">
                 <label for="repoUrl">GitHub Repository URL:</label>
-                <input type="text" id="repoUrl" placeholder="https://github.com/username/repository.git" value="https://github.com/django/django.git">
+                <input type="text" id="repoUrl" placeholder="https://github.com/username/repository.git" value="">
             </div>
             <div class="form-group">
-                <button onclick="analyzeRepository()">Analyze Repository</button>
+                <button id="analyzeBtn" onclick="analyzeRepository()">Analyze Repository</button>
+                <button id="clearBtn" onclick="clearAnalysis()" style="background: #dc3545; margin-left: 10px;">Clear Analysis</button>
             </div>
         </div>
 
         <div id="loading" class="loading">
-            <h3>Analyzing repository...</h3>
+            <h3>🔄 Analyzing repository...</h3>
             <p>This may take a few minutes depending on the repository size.</p>
+            <p>Please don't close this window.</p>
+        </div>
+
+        <div id="noAnalysis" class="no-data" style="display: block;">
+            <h3>No Analysis Data</h3>
+            <p>Enter a GitHub repository URL above to start analysis.</p>
         </div>
 
         <div id="analysisResults" style="display: none;">
@@ -186,13 +226,47 @@
     </div>
 
     <script>
-        async function analyzeRepository() {
-            const repoUrl = document.getElementById('repoUrl').value;
-            const loading = document.getElementById('loading');
-            const results = document.getElementById('analysisResults');
+        let currentAnalysisTimestamp = null;
+
+        function showMessage(elementId, message) {
+            const element = document.getElementById(elementId);
+            element.textContent = message;
+            element.style.display = 'block';
+            setTimeout(() => {
+                element.style.display = 'none';
+            }, 5000);
+        }
+
+        function setLoading(loading) {
+            const analyzeBtn = document.getElementById('analyzeBtn');
+            const clearBtn = document.getElementById('clearBtn');
+            const loadingDiv = document.getElementById('loading');
+            const resultsDiv = document.getElementById('analysisResults');
+            const noAnalysisDiv = document.getElementById('noAnalysis');
+
+            analyzeBtn.disabled = loading;
+            clearBtn.disabled = loading;
+            loadingDiv.style.display = loading ? 'block' : 'none';
             
-            loading.style.display = 'block';
-            results.style.display = 'none';
+            if (!loading && currentAnalysisTimestamp) {
+                resultsDiv.style.display = 'block';
+                noAnalysisDiv.style.display = 'none';
+            } else if (!loading) {
+                resultsDiv.style.display = 'none';
+                noAnalysisDiv.style.display = 'block';
+            }
+        }
+
+        async function analyzeRepository() {
+            const repoUrl = document.getElementById('repoUrl').value.trim();
+            
+            if (!repoUrl) {
+                showMessage('errorMessage', 'Please enter a repository URL');
+                return;
+            }
+
+            setLoading(true);
+            showMessage('successMessage', 'Analysis started...');
             
             try {
                 const response = await fetch('/api/analyze', {
@@ -204,17 +278,38 @@
                 });
                 
                 if (!response.ok) {
-                    throw new Error('Analysis failed');
+                    const errorData = await response.json();
+                    throw new Error(errorData.detail || 'Analysis failed');
                 }
                 
                 const data = await response.json();
+                currentAnalysisTimestamp = data.repository_analysis.analysis_timestamp;
                 displayAnalysisResults(data);
+                showMessage('successMessage', 'Analysis completed successfully!');
                 
             } catch (error) {
-                alert('Error analyzing repository: ' + error.message);
+                console.error('Analysis error:', error);
+                showMessage('errorMessage', 'Error analyzing repository: ' + error.message);
             } finally {
-                loading.style.display = 'none';
-                results.style.display = 'block';
+                setLoading(false);
+            }
+        }
+
+        async function clearAnalysis() {
+            try {
+                const response = await fetch('/api/clear', {
+                    method: 'POST'
+                });
+                
+                if (response.ok) {
+                    currentAnalysisTimestamp = null;
+                    document.getElementById('analysisResults').style.display = 'none';
+                    document.getElementById('noAnalysis').style.display = 'block';
+                    document.getElementById('repoUrl').value = '';
+                    showMessage('successMessage', 'Analysis cleared successfully');
+                }
+            } catch (error) {
+                showMessage('errorMessage', 'Error clearing analysis: ' + error.message);
             }
         }
         
@@ -262,6 +357,11 @@
                 const cfgsList = document.getElementById('cfgsList');
                 cfgsList.innerHTML = '';
                 
+                if (Object.keys(data).length === 0) {
+                    cfgsList.innerHTML = '<p>No CFGs available</p>';
+                    return;
+                }
+                
                 for (const [cfgId, cfgData] of Object.entries(data)) {
                     const link = document.createElement('a');
                     link.href = `/visualize/cfg/${encodeURIComponent(cfgId)}`;
@@ -272,6 +372,7 @@
                 }
             } catch (error) {
                 console.error('Error loading CFGs:', error);
+                document.getElementById('cfgsList').innerHTML = '<p>Error loading CFGs</p>';
             }
         }
         
@@ -283,6 +384,11 @@
                 const pdgsList = document.getElementById('pdgsList');
                 pdgsList.innerHTML = '';
                 
+                if (Object.keys(data).length === 0) {
+                    pdgsList.innerHTML = '<p>No PDGs available</p>';
+                    return;
+                }
+                
                 for (const [pdgId, pdgData] of Object.entries(data)) {
                     const link = document.createElement('a');
                     link.href = `/visualize/pdg/${encodeURIComponent(pdgId)}`;
@@ -293,6 +399,7 @@
                 }
             } catch (error) {
                 console.error('Error loading PDGs:', error);
+                document.getElementById('pdgsList').innerHTML = '<p>Error loading PDGs</p>';
             }
         }
         
@@ -304,6 +411,11 @@
                 const filesList = document.getElementById('filesList');
                 filesList.innerHTML = '';
                 
+                if (!data.files || data.files.length === 0) {
+                    filesList.innerHTML = '<p>No files analyzed</p>';
+                    return;
+                }
+                
                 data.files.forEach(file => {
                     const fileItem = document.createElement('div');
                     fileItem.className = 'file-item';
@@ -313,6 +425,7 @@
                 });
             } catch (error) {
                 console.error('Error loading files:', error);
+                document.getElementById('filesList').innerHTML = '<p>Error loading files</p>';
             }
         }
         
@@ -320,15 +433,23 @@
             window.open(`/api/ast/${encodeURIComponent(filePath)}`, '_blank');
         }
         
-        // Load initial data if available
+        // Check for existing analysis on page load
         window.addEventListener('load', async () => {
             try {
-                const response = await fetch('/api/analysis');
+                const response = await fetch('/api/status');
                 const data = await response.json();
-                displayAnalysisResults(data);
-                document.getElementById('analysisResults').style.display = 'block';
+                
+                if (data.has_analysis) {
+                    // Load existing analysis
+                    const analysisResponse = await fetch('/api/analysis');
+                    const analysisData = await analysisResponse.json();
+                    currentAnalysisTimestamp = analysisData.repository_analysis.analysis_timestamp;
+                    displayAnalysisResults(analysisData);
+                    document.getElementById('analysisResults').style.display = 'block';
+                    document.getElementById('noAnalysis').style.display = 'none';
+                }
             } catch (error) {
-                console.log('No analysis data available yet');
+                console.log('No existing analysis found');
             }
         });
     </script>

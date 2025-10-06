@@ -1,5 +1,5 @@
-# main_app.py
-from fastapi import FastAPI, HTTPException
+# main_app.py (Updated)
+from fastapi import FastAPI, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 import asyncio
 from step5_navigator import NavigatorModule
@@ -27,18 +27,17 @@ class CodeIQApplication:
         @self.app.post("/api/analyze")
         async def analyze_repository(request: RepositoryRequest):
             try:
+                print(f"Starting analysis for: {request.repo_url}")
                 result = await self.navigator.analyze_repository(request.repo_url)
+                print("Analysis completed successfully")
                 return result
             except Exception as e:
+                print(f"Analysis failed: {str(e)}")
                 raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
         
         @self.app.get("/api/status")
         async def get_status():
-            return {
-                "status": "ready",
-                "has_analysis": self.navigator.hpg is not None,
-                "files_analyzed": len(self.navigator.ast_cache)
-            }
+            return self.navigator.get_analysis_status()
 
 def main():
     # Create and setup application
@@ -53,10 +52,6 @@ def main():
     
     # Run the server
     uvicorn.run(codeiq_app.app, host="localhost", port=8000, log_level="info")
-
-def start_web_app():
-    """Backward-compatible entrypoint used by run_navigator.py"""
-    main()
 
 if __name__ == "__main__":
     main()

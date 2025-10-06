@@ -23,12 +23,27 @@ class NavigatorModule:
         self.pdgs: Dict[str, nx.DiGraph] = {}
         self.file_contents: Dict[str, str] = {}
     
+    def clear_analysis(self):
+        """Clear previous analysis results"""
+        self.ast_cache.clear()
+        self.hpg = None
+        self.cfgs.clear()
+        self.pdgs.clear()
+        self.file_contents.clear()
+        print("Cleared previous analysis results")
+    
     async def analyze_repository(self, repo_url: str) -> Dict:
         """Main method to analyze a GitHub repository"""
         print(f"Starting analysis of repository: {repo_url}")
         
+        # Clear previous analysis
+        self.clear_analysis()
+        
         # Step 1: Parse repository and get file contents
         self.file_contents = await self.repository_parser.process_repository(repo_url)
+        
+        if not self.file_contents:
+            raise HTTPException(status_code=400, detail="No files found in repository or failed to clone")
         
         # Step 2: Build ASTs for each file
         print("Building ASTs...")
@@ -38,6 +53,9 @@ class NavigatorModule:
             if ast_node:
                 self.ast_cache[file_path] = ast_node
                 ast_nodes.append(ast_node)
+        
+        if not ast_nodes:
+            raise HTTPException(status_code=400, detail="No valid code files found to analyze")
         
         # Step 3: Build Hierarchical Program Graph
         print("Building HPG...")
@@ -79,19 +97,26 @@ class NavigatorModule:
     
     def _generate_analysis_report(self) -> Dict:
         """Generate analysis report with statistics"""
+        total_functions = 0
+        total_classes = 0
+        
+        for node in self.ast_cache.values():
+            for child in node.children:
+                if child.type.value == 'function':
+                    total_functions += 1
+                elif child.type.value == 'class':
+                    total_classes += 1
+        
         report = {
             "repository_analysis": {
                 "total_files": len(self.ast_cache),
-                "total_functions": sum(1 for node in self.ast_cache.values() 
-                                     for child in node.children 
-                                     if child.type.value == 'function'),
-                "total_classes": sum(1 for node in self.ast_cache.values() 
-                                   for child in node.children 
-                                   if child.type.value == 'class'),
+                "total_functions": total_functions,
+                "total_classes": total_classes,
                 "hpg_nodes": len(self.hpg.nodes) if self.hpg else 0,
                 "hpg_edges": len(self.hpg.edges) if self.hpg else 0,
                 "cfgs_built": len(self.cfgs),
-                "pdgs_built": len(self.pdgs)
+                "pdgs_built": len(self.pdgs),
+                "analysis_timestamp": asyncio.get_event_loop().time()
             },
             "file_breakdown": [
                 {
@@ -106,6 +131,16 @@ class NavigatorModule:
         }
         
         return report
+    
+    def get_analysis_status(self) -> Dict:
+        """Get current analysis status"""
+        return {
+            "has_analysis": self.hpg is not None,
+            "files_analyzed": len(self.ast_cache),
+            "cfgs_built": len(self.cfgs),
+            "pdgs_built": len(self.pdgs),
+            "hpg_exists": self.hpg is not None
+        }
     
     def visualize_hpg(self, output_path: str = "static/hpg_visualization.html"):
         """Generate visualization of HPG"""

@@ -1,5 +1,5 @@
-# web_server.py
-from fastapi import FastAPI, HTTPException
+# web_server.py (Updated)
+from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -11,6 +11,7 @@ from typing import Dict, Any
 import webbrowser
 import threading
 import time
+import asyncio
 
 class GraphVisualizationServer:
     def __init__(self, navigator_module, host: str = "localhost", port: int = 8000):
@@ -20,13 +21,489 @@ class GraphVisualizationServer:
         self.app = FastAPI(title="CodeIQ Navigator", 
                           description="Graph Visualization API")
         
+        # Track current analysis state
+        self.current_analysis = None
+        self.analysis_in_progress = False
+        
         # Create static directory for visualizations
         self.static_dir = "static"
         os.makedirs(self.static_dir, exist_ok=True)
         self.app.mount("/static", StaticFiles(directory=self.static_dir), name="static")
         
-        self.templates = Jinja2Templates(directory="templates")
+        # Create templates directory
+        self.templates_dir = "templates"
+        os.makedirs(self.templates_dir, exist_ok=True)
+        self.templates = Jinja2Templates(directory=self.templates_dir)
+        
         self._setup_routes()
+        self._create_default_templates()
+    
+    def _create_default_templates(self):
+        """Create default HTML templates if they don't exist"""
+        index_html = """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CodeIQ Navigator</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            border-bottom: 2px solid #007acc;
+            padding-bottom: 15px;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+        .stat-card {
+            background: #007acc;
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .stat-card h3 {
+            margin: 0;
+            font-size: 2em;
+        }
+        .stat-card p {
+            margin: 5px 0 0 0;
+        }
+        .section {
+            margin-bottom: 30px;
+        }
+        .section h2 {
+            color: #007acc;
+            border-bottom: 1px solid #ddd;
+            padding-bottom: 10px;
+        }
+        .file-list {
+            max-height: 300px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .file-item {
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+            cursor: pointer;
+        }
+        .file-item:hover {
+            background-color: #f0f0f0;
+        }
+        .graph-links {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .btn {
+            background: #007acc;
+            color: white;
+            padding: 10px 15px;
+            text-decoration: none;
+            border-radius: 4px;
+            display: inline-block;
+        }
+        .btn:hover {
+            background: #005a9e;
+        }
+        .btn:disabled {
+            background: #cccccc;
+            cursor: not-allowed;
+        }
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .analysis-form {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        .form-group input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .form-group button {
+            background: #28a745;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .form-group button:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+        .form-group button:hover:not(:disabled) {
+            background: #218838;
+        }
+        .error-message {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+            display: none;
+        }
+        .success-message {
+            background: #d1edff;
+            color: #0c5460;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+            display: none;
+        }
+        .no-data {
+            text-align: center;
+            padding: 40px;
+            color: #6c757d;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>CodeIQ Navigator</h1>
+            <p>Automated Code Analysis and Visualization</p>
+        </div>
+
+        <div class="analysis-form">
+            <h2>Analyze Repository</h2>
+            <div id="errorMessage" class="error-message"></div>
+            <div id="successMessage" class="success-message"></div>
+            <div class="form-group">
+                <label for="repoUrl">GitHub Repository URL:</label>
+                <input type="text" id="repoUrl" placeholder="https://github.com/username/repository.git" value="">
+            </div>
+            <div class="form-group">
+                <button id="analyzeBtn" onclick="analyzeRepository()">Analyze Repository</button>
+                <button id="clearBtn" onclick="clearAnalysis()" style="background: #dc3545; margin-left: 10px;">Clear Analysis</button>
+            </div>
+        </div>
+
+        <div id="loading" class="loading">
+            <h3>🔄 Analyzing repository...</h3>
+            <p>This may take a few minutes depending on the repository size.</p>
+            <p>Please don't close this window.</p>
+        </div>
+
+        <div id="noAnalysis" class="no-data" style="display: block;">
+            <h3>No Analysis Data</h3>
+            <p>Enter a GitHub repository URL above to start analysis.</p>
+        </div>
+
+        <div id="analysisResults" style="display: none;">
+            <div class="section">
+                <h2>Repository Analysis Summary</h2>
+                <div class="stats-grid" id="statsGrid">
+                    <!-- Stats will be populated by JavaScript -->
+                </div>
+            </div>
+
+            <div class="section">
+                <h2>Graph Visualizations</h2>
+                <div class="graph-links">
+                    <a href="/visualize/hpg" class="btn" target="_blank">View HPG (Hierarchical Program Graph)</a>
+                    <a href="/api/hpg" class="btn" target="_blank">HPG JSON Data</a>
+                </div>
+            </div>
+
+            <div class="section">
+                <h2>Control Flow Graphs</h2>
+                <div id="cfgsList" class="graph-links">
+                    <!-- CFG links will be populated by JavaScript -->
+                </div>
+            </div>
+
+            <div class="section">
+                <h2>Program Dependency Graphs</h2>
+                <div id="pdgsList" class="graph-links">
+                    <!-- PDG links will be populated by JavaScript -->
+                </div>
+            </div>
+
+            <div class="section">
+                <h2>Repository Files</h2>
+                <div class="file-list" id="filesList">
+                    <!-- Files will be populated by JavaScript -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentAnalysisTimestamp = null;
+
+        function showMessage(elementId, message) {
+            const element = document.getElementById(elementId);
+            element.textContent = message;
+            element.style.display = 'block';
+            setTimeout(() => {
+                element.style.display = 'none';
+            }, 5000);
+        }
+
+        function setLoading(loading) {
+            const analyzeBtn = document.getElementById('analyzeBtn');
+            const clearBtn = document.getElementById('clearBtn');
+            const loadingDiv = document.getElementById('loading');
+            const resultsDiv = document.getElementById('analysisResults');
+            const noAnalysisDiv = document.getElementById('noAnalysis');
+
+            analyzeBtn.disabled = loading;
+            clearBtn.disabled = loading;
+            loadingDiv.style.display = loading ? 'block' : 'none';
+            
+            if (!loading && currentAnalysisTimestamp) {
+                resultsDiv.style.display = 'block';
+                noAnalysisDiv.style.display = 'none';
+            } else if (!loading) {
+                resultsDiv.style.display = 'none';
+                noAnalysisDiv.style.display = 'block';
+            }
+        }
+
+        async function analyzeRepository() {
+            const repoUrl = document.getElementById('repoUrl').value.trim();
+            
+            if (!repoUrl) {
+                showMessage('errorMessage', 'Please enter a repository URL');
+                return;
+            }
+
+            setLoading(true);
+            showMessage('successMessage', 'Analysis started...');
+            
+            try {
+                const response = await fetch('/api/analyze', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ repo_url: repoUrl })
+                });
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.detail || 'Analysis failed');
+                }
+                
+                const data = await response.json();
+                currentAnalysisTimestamp = data.repository_analysis.analysis_timestamp;
+                displayAnalysisResults(data);
+                showMessage('successMessage', 'Analysis completed successfully!');
+                
+            } catch (error) {
+                console.error('Analysis error:', error);
+                showMessage('errorMessage', 'Error analyzing repository: ' + error.message);
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        async function clearAnalysis() {
+            try {
+                const response = await fetch('/api/clear', {
+                    method: 'POST'
+                });
+                
+                if (response.ok) {
+                    currentAnalysisTimestamp = null;
+                    document.getElementById('analysisResults').style.display = 'none';
+                    document.getElementById('noAnalysis').style.display = 'block';
+                    document.getElementById('repoUrl').value = '';
+                    showMessage('successMessage', 'Analysis cleared successfully');
+                }
+            } catch (error) {
+                showMessage('errorMessage', 'Error clearing analysis: ' + error.message);
+            }
+        }
+        
+        function displayAnalysisResults(data) {
+            // Update stats grid
+            const stats = data.repository_analysis;
+            document.getElementById('statsGrid').innerHTML = `
+                <div class="stat-card">
+                    <h3>${stats.total_files}</h3>
+                    <p>Files</p>
+                </div>
+                <div class="stat-card">
+                    <h3>${stats.total_functions}</h3>
+                    <p>Functions</p>
+                </div>
+                <div class="stat-card">
+                    <h3>${stats.total_classes}</h3>
+                    <p>Classes</p>
+                </div>
+                <div class="stat-card">
+                    <h3>${stats.hpg_nodes}</h3>
+                    <p>HPG Nodes</p>
+                </div>
+                <div class="stat-card">
+                    <h3>${stats.hpg_edges}</h3>
+                    <p>HPG Edges</p>
+                </div>
+                <div class="stat-card">
+                    <h3>${stats.cfgs_built}</h3>
+                    <p>CFGs Built</p>
+                </div>
+            `;
+            
+            // Load additional data
+            loadCFGs();
+            loadPDGs();
+            loadFiles();
+        }
+        
+        async function loadCFGs() {
+            try {
+                const response = await fetch('/api/cfgs');
+                const data = await response.json();
+                
+                const cfgsList = document.getElementById('cfgsList');
+                cfgsList.innerHTML = '';
+                
+                if (Object.keys(data).length === 0) {
+                    cfgsList.innerHTML = '<p>No CFGs available</p>';
+                    return;
+                }
+                
+                for (const [cfgId, cfgData] of Object.entries(data)) {
+                    const link = document.createElement('a');
+                    link.href = `/visualize/cfg/${encodeURIComponent(cfgId)}`;
+                    link.className = 'btn';
+                    link.target = '_blank';
+                    link.textContent = `View CFG: ${cfgId.split('_').pop()}`;
+                    cfgsList.appendChild(link);
+                }
+            } catch (error) {
+                console.error('Error loading CFGs:', error);
+                document.getElementById('cfgsList').innerHTML = '<p>Error loading CFGs</p>';
+            }
+        }
+        
+        async function loadPDGs() {
+            try {
+                const response = await fetch('/api/pdgs');
+                const data = await response.json();
+                
+                const pdgsList = document.getElementById('pdgsList');
+                pdgsList.innerHTML = '';
+                
+                if (Object.keys(data).length === 0) {
+                    pdgsList.innerHTML = '<p>No PDGs available</p>';
+                    return;
+                }
+                
+                for (const [pdgId, pdgData] of Object.entries(data)) {
+                    const link = document.createElement('a');
+                    link.href = `/visualize/pdg/${encodeURIComponent(pdgId)}`;
+                    link.className = 'btn';
+                    link.target = '_blank';
+                    link.textContent = `View PDG: ${pdgId.split('_').pop()}`;
+                    pdgsList.appendChild(link);
+                }
+            } catch (error) {
+                console.error('Error loading PDGs:', error);
+                document.getElementById('pdgsList').innerHTML = '<p>Error loading PDGs</p>';
+            }
+        }
+        
+        async function loadFiles() {
+            try {
+                const response = await fetch('/api/files');
+                const data = await response.json();
+                
+                const filesList = document.getElementById('filesList');
+                filesList.innerHTML = '';
+                
+                if (!data.files || data.files.length === 0) {
+                    filesList.innerHTML = '<p>No files analyzed</p>';
+                    return;
+                }
+                
+                data.files.forEach(file => {
+                    const fileItem = document.createElement('div');
+                    fileItem.className = 'file-item';
+                    fileItem.textContent = file;
+                    fileItem.onclick = () => viewFileAST(file);
+                    filesList.appendChild(fileItem);
+                });
+            } catch (error) {
+                console.error('Error loading files:', error);
+                document.getElementById('filesList').innerHTML = '<p>Error loading files</p>';
+            }
+        }
+        
+        function viewFileAST(filePath) {
+            window.open(`/api/ast/${encodeURIComponent(filePath)}`, '_blank');
+        }
+        
+        // Check for existing analysis on page load
+        window.addEventListener('load', async () => {
+            try {
+                const response = await fetch('/api/status');
+                const data = await response.json();
+                
+                if (data.has_analysis) {
+                    // Load existing analysis
+                    const analysisResponse = await fetch('/api/analysis');
+                    const analysisData = await analysisResponse.json();
+                    currentAnalysisTimestamp = analysisData.repository_analysis.analysis_timestamp;
+                    displayAnalysisResults(analysisData);
+                    document.getElementById('analysisResults').style.display = 'block';
+                    document.getElementById('noAnalysis').style.display = 'none';
+                }
+            } catch (error) {
+                console.log('No existing analysis found');
+            }
+        });
+    </script>
+</body>
+</html>"""
+        
+        index_path = os.path.join(self.templates_dir, "index.html")
+        
+        # Ensure UTF-8 encoding on Windows so characters like emoji don't raise
+        # UnicodeEncodeError when writing files.
+        with open(index_path, "w", encoding="utf-8", errors="replace") as f:
+            f.write(index_html)
     
     def _setup_routes(self):
         @self.app.get("/", response_class=HTMLResponse)
@@ -40,6 +517,17 @@ class GraphVisualizationServer:
             
             report = self.navigator._generate_analysis_report()
             return JSONResponse(content=report)
+        
+        @self.app.post("/api/clear")
+        async def clear_analysis():
+            self.navigator.clear_analysis()
+            self.current_analysis = None
+            return {"message": "Analysis cleared successfully"}
+        
+        @self.app.get("/api/status")
+        async def get_status():
+            status = self.navigator.get_analysis_status()
+            return JSONResponse(content=status)
         
         @self.app.get("/api/hpg")
         async def get_hpg():
@@ -62,7 +550,7 @@ class GraphVisualizationServer:
         @self.app.get("/api/cfgs")
         async def get_cfgs():
             if not self.navigator.cfgs:
-                raise HTTPException(status_code=404, detail="No CFGs built yet")
+                return JSONResponse(content={})
             
             cfgs_data = {}
             for cfg_id, cfg in self.navigator.cfgs.items():
@@ -81,7 +569,7 @@ class GraphVisualizationServer:
         @self.app.get("/api/pdgs")
         async def get_pdgs():
             if not self.navigator.pdgs:
-                raise HTTPException(status_code=404, detail="No PDGs built yet")
+                return JSONResponse(content={})
             
             pdgs_data = {}
             for pdg_id, pdg in self.navigator.pdgs.items():
@@ -105,6 +593,11 @@ class GraphVisualizationServer:
             
             return JSONResponse(content=ast_node.dict())
         
+        @self.app.get("/api/files")
+        async def get_files():
+            files = list(self.navigator.ast_cache.keys())
+            return JSONResponse(content={"files": files})
+        
         @self.app.get("/visualize/hpg")
         async def visualize_hpg():
             if not self.navigator.hpg:
@@ -112,11 +605,6 @@ class GraphVisualizationServer:
             
             output_path = os.path.join(self.static_dir, "hpg_visualization.html")
             self.navigator.visualize_hpg(output_path)
-            # Ensure any pyvis assets are moved into our static folder and paths fixed
-            try:
-                self._postprocess_pyvis_html(output_path)
-            except Exception:
-                pass
             
             return HTMLResponse(content=f"""
                 <html>
@@ -134,18 +622,15 @@ class GraphVisualizationServer:
             cfg = self.navigator.cfgs.get(node_id)
             if not cfg:
                 raise HTTPException(status_code=404, detail=f"CFG not found for node: {node_id}")
-
-            # Sanitize node_id for use in a filename so we don't create invalid paths
-            safe_name = self._sanitize_filename(node_id)
-            output_filename = f"cfg_{safe_name}.html"
-            output_path = os.path.join(self.static_dir, output_filename)
+            
+            output_path = os.path.join(self.static_dir, f"cfg_{node_id}.html")
             self._visualize_graph(cfg, output_path, f"CFG for {node_id}")
-
+            
             return HTMLResponse(content=f"""
                 <html>
                     <body>
                         <h1>CFG Visualization for {node_id}</h1>
-                        <iframe src="/static/{output_filename}" width="100%" height="600px"></iframe>
+                        <iframe src="/static/cfg_{node_id}.html" width="100%" height="600px"></iframe>
                         <br>
                         <a href="/">Back to Home</a>
                     </body>
@@ -157,27 +642,20 @@ class GraphVisualizationServer:
             pdg = self.navigator.pdgs.get(node_id)
             if not pdg:
                 raise HTTPException(status_code=404, detail=f"PDG not found for node: {node_id}")
-
-            safe_name = self._sanitize_filename(node_id)
-            output_filename = f"pdg_{safe_name}.html"
-            output_path = os.path.join(self.static_dir, output_filename)
+            
+            output_path = os.path.join(self.static_dir, f"pdg_{node_id}.html")
             self._visualize_graph(pdg, output_path, f"PDG for {node_id}")
-
+            
             return HTMLResponse(content=f"""
                 <html>
                     <body>
                         <h1>PDG Visualization for {node_id}</h1>
-                        <iframe src="/static/{output_filename}" width="100%" height="600px"></iframe>
+                        <iframe src="/static/pdg_{node_id}.html" width="100%" height="600px"></iframe>
                         <br>
                         <a href="/">Back to Home</a>
                     </body>
                 </html>
             """)
-        
-        @self.app.get("/api/files")
-        async def get_files():
-            files = list(self.navigator.ast_cache.keys())
-            return JSONResponse(content={"files": files})
     
     def _visualize_graph(self, graph, output_path: str, title: str):
         """Visualize any graph using pyvis"""
@@ -197,75 +675,14 @@ class GraphVisualizationServer:
                 net.add_edge(source, target, title=attrs.get('type', ''))
             
             net.save_graph(output_path)
-            # Post-process generated HTML to move any pyvis assets and fix references
-            try:
-                self._postprocess_pyvis_html(output_path)
-            except Exception:
-                pass
             
         except ImportError:
             print("Pyvis not installed. Install with: pip install pyvis")
-
-    def _sanitize_filename(self, name: str) -> str:
-        """Return a filesystem-safe filename fragment for a given name."""
-        # Replace path separators and other URL-unsafe characters
-        import re
-        safe = re.sub(r"[^A-Za-z0-9._-]", "_", name)
-        # Truncate to a reasonable length
-        return safe[:200]
-
-    def _postprocess_pyvis_html(self, output_path: str):
-        """Move pyvis-generated lib assets into static/lib and fix HTML references to /static/lib/"""
-        import shutil
-        import fnmatch
-        html_dir = os.path.dirname(output_path) or "."
-        generated_lib_dir = os.path.join(html_dir, "lib")
-        target_lib_dir = os.path.join(self.static_dir, "lib")
-
-        # If pyvis created lib next to the HTML, copy it into static/lib (preserve tree)
-        try:
-            if os.path.isdir(generated_lib_dir) and generated_lib_dir != target_lib_dir:
-                if os.path.exists(target_lib_dir):
-                    shutil.rmtree(target_lib_dir)
-                shutil.copytree(generated_lib_dir, target_lib_dir)
-            else:
-                # If not found there, try to locate any 'lib' created by pyvis in the workspace
-                if not os.path.isdir(target_lib_dir):
-                    for root, dirs, files in os.walk(os.getcwd()):
-                        if "lib" in dirs:
-                            candidate = os.path.join(root, "lib")
-                            # heuristic: look for bindings/utils.js inside
-                            if os.path.exists(os.path.join(candidate, "bindings", "utils.js")):
-                                os.makedirs(os.path.dirname(target_lib_dir), exist_ok=True)
-                                shutil.copytree(candidate, target_lib_dir)
-                                break
-        except Exception:
-            # Non-fatal: continue to rewrite HTML even if copy failed
-            pass
-
-        # Rewrite the generated HTML to point to /static/lib/ instead of lib/
-        try:
-            with open(output_path, 'r', encoding='utf-8') as f:
-                html = f.read()
-
-            # handle double/single quotes and possible ./lib/ occurrences
-            updated_html = html
-            updated_html = updated_html.replace('src="lib/', 'src="/static/lib/')
-            updated_html = updated_html.replace("src='lib/", "src='/static/lib/")
-            updated_html = updated_html.replace('src="./lib/', 'src="/static/lib/')
-            updated_html = updated_html.replace('href="lib/', 'href="/static/lib/')
-            updated_html = updated_html.replace("href='lib/", "href='/static/lib/")
-            updated_html = updated_html.replace('href="./lib/', 'href="/static/lib/')
-
-            with open(output_path, 'w', encoding='utf-8') as f:
-                f.write(updated_html)
-        except Exception:
-            pass
     
     def start_server(self, open_browser: bool = True):
         """Start the web server"""
         def run_server():
-            uvicorn.run(self.app, host=self.host, port=self.port)
+            uvicorn.run(self.app, host=self.host, port=self.port, log_level="info")
         
         # Start server in a separate thread
         server_thread = threading.Thread(target=run_server, daemon=True)
