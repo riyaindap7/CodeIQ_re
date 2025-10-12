@@ -7,6 +7,8 @@ from fastapi import Request
 import uvicorn
 import json
 import os
+import re
+import hashlib
 from typing import Dict, Any
 import webbrowser
 import threading
@@ -623,19 +625,19 @@ class GraphVisualizationServer:
             if not cfg:
                 raise HTTPException(status_code=404, detail=f"CFG not found for node: {node_id}")
             
-            output_path = os.path.join(self.static_dir, f"cfg_{node_id}.html")
-            self._visualize_graph(cfg, output_path, f"CFG for {node_id}")
-            
+            # Create a suggested output path (visualization routine will sanitize and save under static/)
+            suggested_output = os.path.join(self.static_dir, self._safe_filename(node_id, prefix="cfg_"))
+            file_basename = self._visualize_graph(cfg, suggested_output, f"CFG for {node_id}")
             return HTMLResponse(content=f"""
                 <html>
                     <body>
                         <h1>CFG Visualization for {node_id}</h1>
-                        <iframe src="/static/cfg_{node_id}.html" width="100%" height="600px"></iframe>
+                        <iframe src="/static/{file_basename}" width="100%" height="600px"></iframe>
                         <br>
                         <a href="/">Back to Home</a>
                     </body>
-                </html>
-            """)
+                 </html>
+             """)
         
         @self.app.get("/visualize/pdg/{node_id}")
         async def visualize_pdg(node_id: str):
@@ -643,24 +645,43 @@ class GraphVisualizationServer:
             if not pdg:
                 raise HTTPException(status_code=404, detail=f"PDG not found for node: {node_id}")
             
-            output_path = os.path.join(self.static_dir, f"pdg_{node_id}.html")
-            self._visualize_graph(pdg, output_path, f"PDG for {node_id}")
-            
+            suggested_output = os.path.join(self.static_dir, self._safe_filename(node_id, prefix="pdg_"))
+            file_basename = self._visualize_graph(pdg, suggested_output, f"PDG for {node_id}")
             return HTMLResponse(content=f"""
                 <html>
                     <body>
                         <h1>PDG Visualization for {node_id}</h1>
-                        <iframe src="/static/pdg_{node_id}.html" width="100%" height="600px"></iframe>
+                        <iframe src="/static/{file_basename}" width="100%" height="600px"></iframe>
                         <br>
                         <a href="/">Back to Home</a>
                     </body>
                 </html>
             """)
     
+    def _safe_filename(self, name: str, prefix: str = "", suffix: str = ".html") -> str:
+        """
+        Create a filesystem-safe filename for `name`.
+        Replaces invalid characters and appends a short hash for uniqueness.
+        """
+        # Replace characters invalid on Windows and filesystem separators with underscore
+        safe = re.sub(r'[<>:"/\\|?*\s]+', '_', name)
+        # Trim long names
+        if len(safe) > 120:
+            safe = safe[:120]
+        short_hash = hashlib.sha1(name.encode("utf-8")).hexdigest()[:8]
+        return f"{prefix}{safe}_{short_hash}{suffix}"
+    
     def _visualize_graph(self, graph, output_path: str, title: str):
-        """Visualize any graph using pyvis"""
+        """Visualize any graph using pyvis. Returns the basename of the generated file in the static dir."""
         try:
             from pyvis.network import Network
+            # Ensure the static directory exists
+            os.makedirs(self.static_dir, exist_ok=True)
+            
+            # Determine a safe basename to use for the saved file (ignore any unsafe parts of output_path)
+            base_name = os.path.splitext(os.path.basename(output_path))[0]
+            safe_basename = self._safe_filename(base_name, prefix="", suffix=".html")
+            final_path = os.path.join(self.static_dir, safe_basename)
             
             net = Network(height="600px", width="100%", directed=True)
             
@@ -674,10 +695,24 @@ class GraphVisualizationServer:
             for source, target, attrs in graph.edges(data=True):
                 net.add_edge(source, target, title=attrs.get('type', ''))
             
-            net.save_graph(output_path)
+            # Save to the sanitized final path
+            net.save_graph(final_path)
+            return safe_basename
             
         except ImportError:
             print("Pyvis not installed. Install with: pip install pyvis")
+            return ""
+        except OSError as e:
+            # As a last resort try saving to a hashed filename inside static dir
+            try:
+                fallback_basename = self._safe_filename(str(time.time()), prefix="graph_", suffix=".html")
+                fallback_path = os.path.join(self.static_dir, fallback_basename)
+                net.save_graph(fallback_path)
+                print(f"Saved graph to fallback path: {fallback_path}")
+                return fallback_basename
+            except Exception as ex:
+                print(f"Failed to save graph (fallback too): {ex}")
+                return ""
     
     def start_server(self, open_browser: bool = True):
         """Start the web server"""
